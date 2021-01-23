@@ -1,0 +1,335 @@
+---
+title: "AirBnb Dublin"
+output: 
+  html_notebook: 
+    highlight: kate
+---
+Install the required packages and load the Original Dataset.
+```{r}
+#install.packages(c("tidyverse","naniar","DataExplorer","ggpubr","lubridate","mice"))
+
+library(naniar)
+library(tidyverse)
+library(dplyr)
+library(DataExplorer)
+library("ggpubr")
+library(lubridate)
+library(mice)
+
+```
+Read in the Rawdata
+```{r}
+rawdata <- read.csv("listings.csv")
+```
+Take a birdsEye overview of the raw dataset
+```{r}
+#glimpse(rawdata)
+```
+Extract the relevant Variables to the study.
+```{r}
+DForiginal<- select(rawdata,id,price,neighbourhood_cleansed,market,latitude,longitude,property_type,room_type,accommodates,bathrooms,bedrooms,beds,bed_type,security_deposit,cleaning_fee,has_availability,number_of_reviews,review_scores_rating,cancellation_policy,calculated_host_listings_count,requires_license,host_id,host_since,host_is_superhost,host_total_listings_count,host_identity_verified)
+```
+Take a birdsEye overview of the selected  variables
+```{r}
+#glimpse(DForiginal)
+```
+Convert Variable Types 
+```{r}
+# AS Charactor
+DForiginal$id <- as.character(DForiginal$id)
+DForiginal$host_id <- as.character(DForiginal$host_id)
+# AS Integers/Numeric
+DForiginal$bathrooms <- as.integer(DForiginal$bathrooms)
+DForiginal$security_deposit <- as.numeric(gsub("[\\$,]","",DForiginal$security_deposit))
+DForiginal$price <- as.numeric(gsub("[\\$,]","",DForiginal$price))
+DForiginal$cleaning_fee <- as.numeric(gsub("[\\$,]","",DForiginal$cleaning_fee))
+# AS Date
+DForiginal$host_since <- as_date(DForiginal$host_since)
+```
+MISSING VALUES & IMPUTATION 
+```{r}
+miss_var_table(DForiginal)
+vis_miss(DForiginal)
+miss_var_summary(DForiginal)
+
+  # drop row for host_since as a Date can not be imputated by MICE package
+which_na(DForiginal$host_since)
+dforiginal <- DForiginal[-c(1172,6554), ]
+```
+```{r}
+
+  # apply package MICE
+init = mice(dforiginal, maxit=0) 
+meth = init$method
+predM = init$predictorMatrix
+predM[, c("id","host_id")]=0
+imputed = mice(dforiginal, method=meth, predictorMatrix=predM, m=1,seed=103)
+  # view imputed values example
+imputed$imp$review_scores_rating
+  #Fill the NA with imputed values into new dataframe
+df_imputed <- complete(imputed)
+  # CONFIRMED NO MISSING VALUES IN imputed_df
+miss_var_table(df_imputed)
+miss_var_summary(df_imputed)
+```
+## HOT-ENCODE,BUCKETING CATAGORICAL FEATURES
+```{r}
+  # Identify all Catagorical variebles in dataframe
+df_catagorical<-select_if(df_imputed,is.factor)
+glimpse(df_catagorical)
+
+  # First encode features with True|False creating a dummy variable of 1|zero
+df_imputed <- df_imputed %>%
+  mutate(hostverified_reg= ifelse(host_identity_verified=="t",1,0),
+         superhost_reg=ifelse(host_is_superhost=="t",1,0),
+         license_reg=ifelse(requires_license=="t",1,0),
+         available_reg=ifelse(has_availability=="t",1,0))
+
+df_imputed$hostverified_reg<-as.factor(df_imputed$hostverified_reg)
+ # Second, bucketing other catagorical features together 
+
+
+    # bucketting neighbourhood_cleansed
+#table(df_imputed$neighbourhood_cleansed)
+df_imputed <-  df_imputed %>%
+  mutate(neighbourhood_cleansed= 
+           case_when(neighbourhood_cleansed =="South Dublin" | neighbourhood_cleansed =="Dn Laoghaire-Rathdown" ~ "Out of City Center",
+                     neighbourhood_cleansed =="Dublin City" | neighbourhood_cleansed =="Fingal" ~ "City Center"))
+
+df_imputed$neighbourhood_cleansed<-as.factor(df_imputed$neighbourhood_cleansed)
+
+    # Hot-Encode  neighbourhood_cleansed into saparate colmuns
+df_imputed <- df_imputed %>%
+  mutate(Incity_reg= ifelse(neighbourhood_cleansed=="City Center",1,0))
+#glimpse(df_imputed$neighbourhood_cleansed)
+
+    #bucketting Bed Types
+#table(df_imputed$bed_type)
+df_imputed <- df_imputed %>%
+  mutate(bed_reg= ifelse(bed_type=="Real Bed",1,0))
+
+    #bucketting Room Types
+#table(df_imputed$room_type)
+    # Entire home/apt = 1, (Private room + Shared room +Hotel room)=0
+df_imputed <- df_imputed %>%
+  mutate(FullApt_reg= ifelse(room_type=="Entire home/apt",1,0))
+
+
+    # bucketting Cancellation Policy
+table(df_imputed$cancellation_policy)
+    # (flexible + moderate)= 1 ,(strict_14_with_grace_period + super_strict_30 + super_strict_60)= 0
+df_imputed <- df_imputed %>%
+  mutate(cancellation_reg= ifelse(cancellation_policy=="flexible"| cancellation_policy=="moderate",1,0))
+
+
+    # bucketting Property Type
+    # 33 types grouped into 3 ( House,Apt.Hotel,Other)
+levels(df_imputed$property_type)
+
+df_imputed <-  df_imputed %>%
+  mutate(property_type= 
+           case_when(property_type %in% c("House","Bungalow","Cabin","Chalet","Cottage","Guesthouse","House","Tiny house","Villa","Townhouse") ~ "House",
+                     property_type %in% c("Hotel","Apartment", "Aparthotel", "Bed and breakfast","Boutique hotel","Condominium","Guest suite","Hostel","Loft","Serviced apartment") ~ "Apt.Hotel",
+                     property_type %in% c( "Barn","Boat","Casa particular (Cuba)","Castle","Farm stay","Earth house","Houseboat","Hut","Igloo","Lighthouse","Nature lodge","Tent","Tipi","Other" ) ~ "Other_propertytype"))
+
+df_imputed$property_type<-as.factor(df_imputed$property_type)
+
+
+    # Look at a table of the new column created
+table(df_imputed$property_type)
+    # Hot-Encode  property_type into saparate colmuns
+df_imputed <- df_imputed %>%
+  mutate(House_reg= ifelse(property_type=="House",1,0))
+df_imputed <- df_imputed %>%
+  mutate(Apt.Hotel_reg= ifelse(property_type=="Apt.Hotel",1,0))
+df_imputed <- df_imputed %>%
+  mutate(Other_propertytype_reg= ifelse(property_type=="Other_propertytype",1,0))
+
+```
+Histograms
+```{r}
+# all numeric variables in df_imputed
+df_numericencodeing <- data.frame(df_imputed$host_total_listings_count,df_imputed$calculated_host_listings_count,df_imputed$review_scores_rating,df_imputed$number_of_reviews,df_imputed$cleaning_fee,df_imputed$security_deposit,df_imputed$beds,df_imputed$bedrooms,df_imputed$bathrooms,df_imputed$accommodates,df_imputed$price)
+
+```
+
+```{r}
+hist(log(df_imputed$price),xlim = c(0,20), col = "green")
+hist((df_imputed$calculated_host_listings_count), col = "grey")
+hist((df_imputed$review_scores_rating) , col = "grey")
+hist((df_imputed$number_of_reviews), col = "grey")
+hist((df_imputed$cleaning_fee), col = "grey")
+hist((df_imputed$security_deposit), col = "grey")
+hist((df_imputed$beds), col = "grey")
+hist((df_imputed$bedrooms), col = "grey")
+hist((df_imputed$bathrooms), col = "grey")
+hist((df_imputed$accommodates), col = "grey")
+hist((df_imputed$host_total_listings_count), col = "grey")
+
+```
+EDA
+ Create contingency table, which is a useful way to represent the total counts of observations
+```{r}
+#table(df_imputed$cleaning_fee)
+#table(df_imputed$calculated_host_listings_count)
+#table(df_imputed$review_scores_rating)
+#table(df_imputed$number_of_reviews)
+#table(df_imputed$security_deposit)
+#table(df_imputed$beds)
+#table(df_imputed$bedrooms)
+#table(df_imputed$bathrooms)
+#table(df_imputed$accommodates)
+#table(df_imputed$host_total_listings_count)
+
+```
+
+
+
+```{r}
+# extract the year from host_since date
+host_years <- year(df_imputed$host_since)
+head(host_years)
+class(host_years)
+table(host_years)
+plot_histogram(host_years)
+```
+MODEL CONSTRUCTION (REGGRESSION)
+```{r}
+# normalise the distribustion of listtnings Prises - DEPENDENT 
+price <- df_imputed$price
+price <- as.numeric(gsub("[\\$,]","",df_imputed$price))
+glimpse(price) # overview
+which_na(price) # identify any missing prices
+hist(price) # graph distribution
+log_price<-log(price) # graph distribution of logarithim of price
+hist(log_price)
+```
+# STEPWISE REGRESSION using the numeric features ONLY.
+```{r}
+# select the numeric variables and store in a dataframe
+df_numericencodeing <- data.frame(df_imputed$host_total_listings_count,df_imputed$calculated_host_listings_count,df_imputed$review_scores_rating,df_imputed$number_of_reviews,df_imputed$cleaning_fee,df_imputed$security_deposit,df_imputed$beds,df_imputed$bedrooms,df_imputed$bathrooms,df_imputed$accommodates)
+
+# Regression model_1
+fitstart<-lm(df_imputed$price~1,data=df_numericencodeing)
+fitall=lm(df_imputed$price ~.,df_numericencodeing)
+formula(fitall)
+
+# Stepwise Forward & Backwords
+model_1<-step(fitstart,direction="both",scope = formula(fitall))
+summary(model_1)
+```
+# STEPWISE REGRESSION using numeric and encoded catagorical features.
+```{r}
+# select the numeric and incoded catagorical variables and store in a dataframe
+regdata<-df_imputed[ ,c(9,10,11,12,14,15,17,18,20,25,27:37)]
+
+# Regression model_2
+fitstart2<-lm(df_imputed$price~1,data=regdata)
+fitall2=lm(df_imputed$price ~.,regdata)
+formula(fitall2)
+
+# Stepwise Forward & Backwords
+model_2<-step(fitstart2,direction="both",scope = formula(fitall2))
+summary(model_2)
+```
+
+
+
+
+
+
+```{r}
+print("ALMOST THERE")
+```
+
+
+EDA examples
+Side-by-side box plots
+Faceted histograms
+Overlaid density plots
+```{r}
+df_imputed %>% ggplot(aes( y = log_price,color=property_type)) +
+ stat_boxplot()
+```
+```{r}
+df_imputed %>% ggplot(aes(log_price+0.10,fill=neighbourhood_cleansed)) +
+ geom_histogram(bins=50)
+```
+```{r}
+df_imputed %>% ggplot(aes( y = log_price,fill=room_type)) +
+ stat_boxplot()
+```
+```{r}
+
+df_imputed %>% ggplot(aes(x=df_imputed$hostverified_reg,fill=hostverified_reg)) +
+ geom_bar()
+df_imputed %>% ggplot(aes(x=df_imputed$bedrooms)) +
+ geom_bar()
+df_imputed %>% ggplot(aes(x=df_imputed$superhost_reg,fill=hostverified_reg)) +
+ geom_bar()
+df_imputed %>% ggplot(aes(x=df_imputed$cancellation_reg)) +
+ geom_bar()
+df_imputed %>% ggplot(aes(x=df_imputed$host_total_listings_count,fill=df_imputed$Incity_reg)) +geom_bar()
+```
+
+```{r}
+
+df_imputed %>% ggplot(aes(x=host_total_listings_count,y=log_price,fill=property_type)) +
+ geom_boxplot()
+```
+
+```{r}
+table(df_imputed$cancellation_policy)
+df_imputed %>% group_by(year(host_since))%>%
+  ggplot(aes(y=price,x=host_since))+geom_point()
+```
+
+
+```{r}
+install.packages("corrplot")
+library(corrplot)
+```
+```{r}
+names(df_numericencodeing)<- c("review score","review number","total listings","cal_list_count","deposit","cleaning fee","bathrooms","bedrooms","beds","total_people")
+m<-cor(df_numericencodeing)
+corrplot(m, method="color",type="upper",order="hclust")
+
+```
+col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+corrplot(M, method="color", col=col(200),  
+         type="upper", order="hclust", 
+         addCoef.col = "black", # Add coefficient of correlation
+         tl.col="black", tl.srt=45, #Text label color and rotation
+         # Combine with significance
+         p.mat = p.mat, sig.level = 0.01, insig = "blank", 
+         # hide correlation coefficient on the principal diagonal
+         diag=FALSE 
+         )
+         
+```{r}
+col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+corrplot(m, method="color", col=col(200),  
+         type="upper", order="hclust", 
+         addCoef.col = "grey", # Add coefficient of correlation
+         tl.col="black", tl.srt=45, #Text label color and rotation
+         # hide correlation coefficient on the principal diagonal
+         diag=F
+         )
+```
+http://www.sthda.com/english/articles/24-ggpubr-publication-ready-plots/78-perfect-scatter-plots-with-correlation-and-marginal-histograms
+
+
+https://www.r-bloggers.com/to-eat-or-not-to-eat-thats-the-question-measuring-the-association-between-categorical-variables/
+```{r}
+o<- ggplot(data = df_imputed, aes(x=df_imputed$property_type, y=df_imputed$cancellation_policy, color=cancellation_policy))
+ o + geom_jitter(alpha=0.3) + scale_color_manual(breaks = c('Apt.Hotel','House','Other_propertytype'),values=c('navyblue','pink','darkgreen','purple','red'))
+ 
+ p<- ggplot(data = df_imputed, aes(x=df_imputed$property_type, y=df_imputed$neighbourhood_cleansed, color=neighbourhood_cleansed))
+ p + geom_jitter(alpha=0.3) + scale_color_manual(breaks = c('Apt.Hotel','House','Other_propertytype'),values=c('Turquoise','darkorange'))
+```
+
+```{r}
+
+IQR(df_imputed$price)
+```
+
