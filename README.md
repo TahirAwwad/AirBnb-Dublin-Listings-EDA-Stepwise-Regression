@@ -6,16 +6,16 @@ Data Source file: http://data.insideairbnb.com/ireland/leinster/dublin/2020-12-1
 
 EDA include:
 
-glimpse overview of available variables
+- glimpse overview of available variables
 
-variable type conversion
+- variable type conversion
 
-NA imputation
+- NA imputation
 
-hot-encoding, bucketing
+- hot-encoding, bucketing
 
-feature selection
+- feature selection
 
-visual analysis
+- visual analysis
 
 Conclude with a StepWise regression comparision before the feature engineering and after.
