@@ -6,7 +6,7 @@ output:
 ---
 Install the required packages and load the Original Dataset.
 ```{r}
-#install.packages(c("tidyverse","naniar","DataExplorer","ggpubr","lubridate","mice"))
+install.packages(c("tidyverse","naniar","DataExplorer","ggpubr","lubridate","mice"))
 
 library(naniar)
 library(tidyverse)
@@ -23,7 +23,7 @@ rawdata <- read.csv("listings.csv")
 ```
 Take a birdsEye overview of the raw dataset
 ```{r}
-#glimpse(rawdata)
+glimpse(rawdata)
 ```
 Extract the relevant Variables to the study.
 ```{r}
@@ -234,15 +234,6 @@ summary(model_2)
 ```
 
 
-
-
-
-
-```{r}
-print("ALMOST THERE")
-```
-
-
 EDA examples
 Side-by-side box plots
 Faceted histograms
@@ -284,7 +275,6 @@ df_imputed %>% group_by(year(host_since))%>%
   ggplot(aes(y=price,x=host_since))+geom_point()
 ```
 
-
 ```{r}
 install.packages("corrplot")
 library(corrplot)
@@ -316,10 +306,7 @@ corrplot(m, method="color", col=col(200),
          diag=F
          )
 ```
-http://www.sthda.com/english/articles/24-ggpubr-publication-ready-plots/78-perfect-scatter-plots-with-correlation-and-marginal-histograms
 
-
-https://www.r-bloggers.com/to-eat-or-not-to-eat-thats-the-question-measuring-the-association-between-categorical-variables/
 ```{r}
 o<- ggplot(data = df_imputed, aes(x=df_imputed$property_type, y=df_imputed$cancellation_policy, color=cancellation_policy))
  o + geom_jitter(alpha=0.3) + scale_color_manual(breaks = c('Apt.Hotel','House','Other_propertytype'),values=c('navyblue','pink','darkgreen','purple','red'))
@@ -327,9 +314,7 @@ o<- ggplot(data = df_imputed, aes(x=df_imputed$property_type, y=df_imputed$cance
  p<- ggplot(data = df_imputed, aes(x=df_imputed$property_type, y=df_imputed$neighbourhood_cleansed, color=neighbourhood_cleansed))
  p + geom_jitter(alpha=0.3) + scale_color_manual(breaks = c('Apt.Hotel','House','Other_propertytype'),values=c('Turquoise','darkorange'))
 ```
+Refernce"
+http://www.sthda.com/english/articles/24-ggpubr-publication-ready-plots/78-perfect-scatter-plots-with-correlation-and-marginal-histograms
 
-```{r}
-
-IQR(df_imputed$price)
-```
-
+https://www.r-bloggers.com/to-eat-or-not-to-eat-thats-the-question-measuring-the-association-between-categorical-variables/
